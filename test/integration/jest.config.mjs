@@ -1,0 +1,34 @@
+/** @type {import('jest').Config} */
+export default {
+  moduleFileExtensions: ['js', 'json', 'ts'],
+  rootDir: '../..',
+  testEnvironment: 'node',
+  testMatch: ['<rootDir>/test/integration/**/*.integration-spec.ts'],
+  transform: {
+    '^.+\\.(t|j)s$': [
+      '@swc/jest',
+      {
+        jsc: {
+          parser: {
+            syntax: 'typescript',
+            decorators: true,
+          },
+          transform: {
+            legacyDecorator: true,
+            decoratorMetadata: true,
+          },
+        },
+      },
+    ],
+  },
+  moduleNameMapper: {
+    '^@domain/(.*)$': '<rootDir>/src/domain/$1',
+    '^@application/(.*)$': '<rootDir>/src/application/$1',
+    '^@infrastructure/(.*)$': '<rootDir>/src/infrastructure/$1',
+    '^@presentation/(.*)$': '<rootDir>/src/presentation/$1',
+    '^@shared/(.*)$': '<rootDir>/src/shared/$1',
+  },
+  testTimeout: 15000,
+  collectCoverageFrom: ['src/infrastructure/**/*.ts'],
+  coverageDirectory: 'coverage/integration',
+};
