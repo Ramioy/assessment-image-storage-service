@@ -21,7 +21,10 @@ COPY --from=build /app/dist ./dist
 # Create default volume mount point owned by appuser
 RUN mkdir -p /data/images && chown appuser:appgroup /data/images
 
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 USER appuser
 EXPOSE 3001
 
-CMD ["node", "dist/main"]
+ENTRYPOINT ["docker-entrypoint.sh"]
