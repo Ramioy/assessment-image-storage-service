@@ -1,0 +1,37 @@
+services:
+  image-storage:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    ports:
+      - '${PORT:-3001}:${PORT:-3001}'
+    volumes:
+      - image-storage-dev:${VOLUME_MOUNT_PATH}
+    environment:
+      NODE_ENV: ${NODE_ENV}
+      PORT: ${PORT}
+      HOST: ${HOST}
+      LOG_LEVEL: ${LOG_LEVEL}
+      API_PREFIX: ${API_PREFIX}
+      API_VERSION: ${API_VERSION}
+      API_KEY_ENABLED: ${API_KEY_ENABLED}
+      API_KEY: ${API_KEY}
+      APP_NAME: ${APP_NAME}
+      APP_DESCRIPTION: ${APP_DESCRIPTION}
+      ENABLE_SWAGGER: ${ENABLE_SWAGGER}
+      ENABLE_HEALTH_CHECK: ${ENABLE_HEALTH_CHECK}
+      VOLUME_MOUNT_PATH: ${VOLUME_MOUNT_PATH}
+      MAX_FILE_SIZE_MB: ${MAX_FILE_SIZE_MB}
+      MAX_IMAGES_PER_PRODUCT: ${MAX_IMAGES_PER_PRODUCT}
+      CORS_ENABLED: ${CORS_ENABLED}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+    networks:
+      - assessment-development
+
+volumes:
+  image-storage-dev:
+    driver: local
+
+networks:
+  assessment-development:
+    name: assessment-development
