@@ -36,13 +36,12 @@ export const envValidationSchema = Joi.object({
 
   // Application information
   APP_NAME: Joi.string().default('assessment-image-storage-service'),
-  APP_DESCRIPTION: Joi.string().default('Microservice for uploading, serving, and deleting product image files'),
+  APP_DESCRIPTION: Joi.string().default(
+    'Microservice for uploading, serving, and deleting product image files',
+  ),
 
   // Volume storage
   VOLUME_MOUNT_PATH: Joi.string().default('/data/images'),
   MAX_FILE_SIZE_MB: Joi.number().integer().positive().default(DEFAULT_MAX_FILE_SIZE_MB),
-  MAX_IMAGES_PER_PRODUCT: Joi.number()
-    .integer()
-    .positive()
-    .default(DEFAULT_MAX_IMAGES_PER_PRODUCT),
+  MAX_IMAGES_PER_PRODUCT: Joi.number().integer().positive().default(DEFAULT_MAX_IMAGES_PER_PRODUCT),
 }).unknown(true);

@@ -32,12 +32,13 @@ import { DeleteProductImagesUseCase } from '@application/image/use-cases/delete-
 
 import { ImageValidationPipe } from './pipes/image-validation.pipe';
 import { unwrapResult } from '../helpers/result-to-response.helper';
-import { type UploadImageInput } from '@application/image/use-cases/upload-image.use-case';
 
 @ApiTags('Product Images')
 @Controller('products')
 @UseGuards(ApiKeyGuard)
 export class ImageController {
+  private readonly imageValidationPipe = new ImageValidationPipe();
+
   constructor(
     private readonly uploadUseCase: UploadImageUseCase,
     private readonly serveUseCase: ServeImageUseCase,
@@ -66,8 +67,9 @@ export class ImageController {
   @ApiResponse({ status: 415, description: 'Unsupported MIME type' })
   async upload(
     @Param('productId', ParseUUIDPipe) productId: string,
-    @Req(new ImageValidationPipe()) file: UploadImageInput['file'],
+    @Req() request: FastifyRequest,
   ) {
+    const file = await this.imageValidationPipe.transform(request);
     return unwrapResult(await this.uploadUseCase.execute({ productId, file }));
   }
 

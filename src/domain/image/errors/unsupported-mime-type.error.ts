@@ -5,6 +5,8 @@ export class UnsupportedMimeTypeError {
   readonly message: string;
 
   constructor(readonly mimeType: string) {
-    this.message = `MIME type "${mimeType}" is not supported. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}.`;
+    this.message = `MIME type "${mimeType}" is not supported. Allowed: ${ALLOWED_MIME_TYPES.join(
+      ', ',
+    )}.`;
   }
 }

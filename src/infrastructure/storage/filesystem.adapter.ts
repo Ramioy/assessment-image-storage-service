@@ -15,7 +15,10 @@ export class FilesystemAdapter implements StoragePort {
 
   constructor(private readonly rootPath: string) {}
 
-  async write(relativePath: string, buffer: Buffer): Promise<Result<void, StorageOperationFailedError>> {
+  async write(
+    relativePath: string,
+    buffer: Buffer,
+  ): Promise<Result<void, StorageOperationFailedError>> {
     const absolute = join(this.rootPath, relativePath);
     try {
       await mkdir(dirname(absolute), { recursive: true });
