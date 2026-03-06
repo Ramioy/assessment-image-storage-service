@@ -1,0 +1,454 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "assessment-image-storage-service",
+    "description": "Lightweight microservice for uploading, serving, and deleting product image files. It exposes a RESTful API where each image is addressable via /{productId}/{imageId}. This service owns no database — it manages binary files on the local filesystem backed by a Docker volume. The catalogue/domain service owns the metadata and stores the image URL that points here.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "YOIMAR MORENO BERTEL",
+      "email": "Yoimar.mb@outlook.com",
+      "url": "https://www.linkedin.com/in/yoimar-mb/"
+    },
+    "license": {
+      "name": "GPL-3.0-only"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001/api/development/v1",
+      "description": "Local development server (NODE_ENV=development, default port)"
+    },
+    {
+      "url": "http://localhost:3001/api/test/v1",
+      "description": "Test server (NODE_ENV=test, used in E2E tests)"
+    },
+    {
+      "url": "http://localhost:3001/api/production/v1",
+      "description": "Production server (NODE_ENV=production, API key required)"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Product Images",
+      "description": "Upload, serve, list, and delete product images stored on the Docker volume."
+    },
+    {
+      "name": "Health",
+      "description": "Service health check — verifies the Docker volume is mounted and writable."
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "paths": {
+    "/products/{productId}/images": {
+      "post": {
+        "tags": ["Product Images"],
+        "summary": "Upload an image for a product",
+        "description": "Accepts a multipart/form-data request with a single file field. Validates MIME type, file size, per-product image count limit, and binary integrity (via sharp). Returns the generated image metadata. The caller is expected to persist the returned storagePath in its own database.",
+        "operationId": "uploadImage",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/productId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Image file to upload. Allowed types: image/jpeg, image/png, image/webp, image/gif. Maximum size: 10 MB (configurable via MAX_FILE_SIZE_MB)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image uploaded successfully.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ImageFileDto" },
+                "example": {
+                  "id": "b2c3d4e5-2345-4678-9abc-f12345678901",
+                  "productId": "a1b2c3d4-1234-4567-89ab-ef1234567890",
+                  "originalName": "hero-photo.jpg",
+                  "mimeType": "image/jpeg",
+                  "sizeBytes": 48320,
+                  "storagePath": "a1b2c3d4-1234-4567-89ab-ef1234567890/b2c3d4e5-2345-4678-9abc-f12345678901.jpg"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file attached or multipart parse error.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": {
+            "description": "The product has reached its maximum image count (default: 20).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": {
+                  "statusCode": 409,
+                  "message": "Product \"a1b2c3d4-...\" has reached the maximum of 20 images.",
+                  "timestamp": "2026-03-06T12:00:00.000Z"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File exceeds the configured size limit (default: 10 MB).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "415": {
+            "description": "MIME type not allowed. Allowed: image/jpeg, image/png, image/webp, image/gif.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "502": { "$ref": "#/components/responses/StorageError" }
+        }
+      },
+      "get": {
+        "tags": ["Product Images"],
+        "summary": "List all image IDs for a product",
+        "description": "Returns an array of image ID strings (UUID, without file extension) for all images stored under the given product directory. Returns an empty array if the product has no images. This endpoint is public — no API key required.",
+        "operationId": "listImages",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/productId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Array of image IDs (UUIDs without extension).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "examples": {
+                  "withImages": {
+                    "summary": "Product with two images",
+                    "value": [
+                      "b2c3d4e5-2345-4678-9abc-f12345678901",
+                      "c3d4e5f6-3456-4789-abcd-123456789012"
+                    ]
+                  },
+                  "empty": {
+                    "summary": "Product with no images",
+                    "value": []
+                  }
+                }
+              }
+            }
+          },
+          "502": { "$ref": "#/components/responses/StorageError" }
+        }
+      },
+      "delete": {
+        "tags": ["Product Images"],
+        "summary": "Delete all images for a product",
+        "description": "Recursively removes the entire product directory from the Docker volume. This is a non-reversible bulk operation. Returns 204 No Content on success, including when the product directory does not exist.",
+        "operationId": "deleteProductImages",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/productId" }
+        ],
+        "responses": {
+          "204": {
+            "description": "All images deleted (or the product had no images)."
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "502": { "$ref": "#/components/responses/StorageError" }
+        }
+      }
+    },
+    "/products/{productId}/images/{imageId}": {
+      "get": {
+        "tags": ["Product Images"],
+        "summary": "Serve an image binary",
+        "description": "Returns the raw image binary with appropriate Content-Type, Cache-Control (immutable, 1 year), ETag, and Content-Disposition headers. This endpoint is public and designed to be served directly to browsers or proxied via a CDN.",
+        "operationId": "serveImage",
+        "security": [],
+        "parameters": [
+          { "$ref": "#/components/parameters/productId" },
+          { "$ref": "#/components/parameters/imageId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image binary with cache headers.",
+            "headers": {
+              "Content-Type": {
+                "schema": { "type": "string" },
+                "description": "The MIME type of the image (e.g. image/jpeg, image/png).",
+                "example": "image/jpeg"
+              },
+              "Cache-Control": {
+                "schema": { "type": "string" },
+                "description": "Immutable cache directive.",
+                "example": "public, max-age=31536000, immutable"
+              },
+              "ETag": {
+                "schema": { "type": "string" },
+                "description": "The image UUID wrapped in double quotes.",
+                "example": "\"b2c3d4e5-2345-4678-9abc-f12345678901\""
+              },
+              "Content-Disposition": {
+                "schema": { "type": "string" },
+                "example": "inline"
+              }
+            },
+            "content": {
+              "image/jpeg": { "schema": { "type": "string", "format": "binary" } },
+              "image/png": { "schema": { "type": "string", "format": "binary" } },
+              "image/webp": { "schema": { "type": "string", "format": "binary" } },
+              "image/gif": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": {
+            "description": "Image not found under the given product.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "502": { "$ref": "#/components/responses/StorageError" }
+        }
+      },
+      "delete": {
+        "tags": ["Product Images"],
+        "summary": "Delete a single image",
+        "description": "Removes one image file from the Docker volume. The image is located by scanning the product directory for a file whose name (without extension) matches the given imageId.",
+        "operationId": "deleteImage",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [
+          { "$ref": "#/components/parameters/productId" },
+          { "$ref": "#/components/parameters/imageId" }
+        ],
+        "responses": {
+          "204": {
+            "description": "Image deleted successfully."
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": {
+            "description": "Image not found.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "502": { "$ref": "#/components/responses/StorageError" }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check — verifies the volume is mounted and writable",
+        "description": "Attempts to write and immediately delete a sentinel file (.health-check) at the volume root. Returns status 'ok' if both operations succeed, or 'degraded' if the write fails. This endpoint is public and intended for orchestrator liveness probes.",
+        "operationId": "healthCheck",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Health status. Note: a 'degraded' storage state is still returned with HTTP 200 — the orchestrator should inspect the body.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" },
+                "examples": {
+                  "healthy": {
+                    "summary": "Volume writable",
+                    "value": {
+                      "status": "ok",
+                      "storage": "writable",
+                      "timestamp": "2026-03-06T12:00:00.000Z"
+                    }
+                  },
+                  "degraded": {
+                    "summary": "Volume unavailable",
+                    "value": {
+                      "status": "degraded",
+                      "storage": "unavailable",
+                      "timestamp": "2026-03-06T12:00:00.000Z"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Required when API_KEY_ENABLED=true. Set via the x-api-key request header. Guarded routes: POST and DELETE on /products endpoints."
+      }
+    },
+    "parameters": {
+      "productId": {
+        "name": "productId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "UUID v4 of the product whose images are being managed. Validated by NestJS ParseUUIDPipe — any non-UUID value returns 400.",
+        "example": "a1b2c3d4-1234-4567-89ab-ef1234567890"
+      },
+      "imageId": {
+        "name": "imageId",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "UUID v4 generated by this service at upload time. Validated by NestJS ParseUUIDPipe.",
+        "example": "b2c3d4e5-2345-4678-9abc-f12345678901"
+      }
+    },
+    "schemas": {
+      "ImageFileDto": {
+        "type": "object",
+        "required": ["id", "productId", "originalName", "mimeType", "sizeBytes", "storagePath"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "UUID v4 generated by this service at upload time. Use this to construct subsequent serve/delete requests."
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The product ID passed in the upload request."
+          },
+          "originalName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255,
+            "description": "Original filename as provided by the multipart upload."
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": ["image/jpeg", "image/png", "image/webp", "image/gif"],
+            "description": "Validated MIME type of the uploaded file."
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Size of the uploaded file in bytes."
+          },
+          "storagePath": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Relative path on the Docker volume: {productId}/{imageId}.{ext}. The calling service should persist this to reconstruct the serve URL.",
+            "example": "a1b2c3d4-1234-4567-89ab-ef1234567890/b2c3d4e5-2345-4678-9abc-f12345678901.jpg"
+          }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": ["status", "storage", "timestamp"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ok", "degraded"],
+            "description": "'ok' when the Docker volume is mounted and writable; 'degraded' otherwise."
+          },
+          "storage": {
+            "type": "string",
+            "enum": ["writable", "unavailable"],
+            "description": "Result of the write probe against the volume mount point."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp of when the health check was performed."
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["statusCode", "message", "timestamp"],
+        "properties": {
+          "statusCode": {
+            "type": "integer",
+            "description": "HTTP status code."
+          },
+          "message": {
+            "oneOf": [
+              { "type": "string" },
+              { "type": "object" }
+            ],
+            "description": "Human-readable error description or NestJS validation error object."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp of when the error occurred."
+          }
+        }
+      }
+    },
+    "responses": {
+      "Unauthorized": {
+        "description": "Missing or invalid x-api-key header (only when API_KEY_ENABLED=true).",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "statusCode": 401,
+              "message": "Invalid or missing API key",
+              "timestamp": "2026-03-06T12:00:00.000Z"
+            }
+          }
+        }
+      },
+      "StorageError": {
+        "description": "The Docker volume is unavailable or a filesystem operation failed.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "statusCode": 502,
+              "message": "Storage write failed for path \"a1b2c3d4-.../b2c3d4e5-....jpg\".",
+              "timestamp": "2026-03-06T12:00:00.000Z"
+            }
+          }
+        }
+      }
+    }
+  }
+}
